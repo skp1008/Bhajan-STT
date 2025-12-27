@@ -3,14 +3,70 @@ import sys
 import time
 import io
 import os
+import csv
+import re
+import unicodedata
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, List, Optional
 
 import numpy as np
 import soundfile as sf
 from scipy.signal import resample_poly
 
 TARGET_SR = 16000
+
+# --- Lyrics normalization helpers ---
+
+_WS_RE = re.compile(r"\s+")
+_PUNCT_RE = re.compile(r"[""'‘'\(\)\[\]\{\},;:!?]+")
+_DANDA_RE = re.compile(r"[।॥]")
+
+def normalize_lyrics_line(s: str) -> str:
+    """Conservative normalization for lyrics matching."""
+    if s is None:
+        return ""
+    s = s.strip()
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKC", s)
+    s = s.replace("\u00A0", " ").replace("\u200B", " ")
+    s = _WS_RE.sub(" ", s).strip()
+    s = _DANDA_RE.sub("", s)
+    s = _PUNCT_RE.sub("", s)
+    s = _WS_RE.sub(" ", s).strip()
+    return s
+
+def load_lyrics_from_csv(path: str, col_index: int = 0) -> Tuple[List[str], List[str]]:
+    """
+    Reads CSV and extracts first Devanagari line from each row's first column.
+    Returns: (lyrics_base, lyrics_normalized)
+    """
+    lyrics_base: List[str] = []
+    lyrics_normalized: List[str] = []
+    
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if not row or col_index >= len(row):
+                continue
+            cell = row[col_index]
+            if cell is None:
+                continue
+            cell = str(cell).strip()
+            if not cell:
+                continue
+            lines = [ln.strip() for ln in cell.splitlines()]
+            first = ""
+            for ln in lines:
+                if ln:
+                    first = ln
+                    break
+            if not first:
+                continue
+            lyrics_base.append(first)
+            lyrics_normalized.append(normalize_lyrics_line(first))
+    
+    return lyrics_base, lyrics_normalized
 
 
 def load_audio_mono(path: str) -> Tuple[np.ndarray, int]:
@@ -105,6 +161,7 @@ def build_engine(engine_name: str, cfg: ASRConfig):
 def main():
     p = argparse.ArgumentParser(description="Step 1–4: windowed ASR test on a .wav file (faster-whisper).")
     p.add_argument("--audio", default="test_audio.wav", help="Path to input audio (wav recommended).")
+    p.add_argument("--lyrics-csv", type=str, default=None, help="Path to CSV file with lyrics (optional).")
     p.add_argument("--engine", default="whisper", choices=["whisper", "whisper-online"], help="ASR engine: 'whisper' (local) or 'whisper-online' (OpenAI API).")
 
     p.add_argument("--model-size", default="medium", help="Whisper size: tiny/base/small/medium/large-v3 etc.")
@@ -136,6 +193,12 @@ def main():
     start_sec = max(0.0, args.start_sec)
     end_sec = total_sec if args.end_sec < 0 else min(total_sec, args.end_sec)
 
+    # Load lyrics if CSV provided
+    lyrics_base: Optional[List[str]] = None
+    lyrics_normalized: Optional[List[str]] = None
+    if args.lyrics_csv:
+        lyrics_base, lyrics_normalized = load_lyrics_from_csv(args.lyrics_csv)
+
     cfg = ASRConfig(
         model_size=args.model_size,
         device=args.device,
@@ -162,6 +225,11 @@ def main():
     print(f"Duration: {total_sec:.2f}s | Processing range: {start_sec:.2f}s to {end_sec:.2f}s")
     print(f"Engine: {args.engine} | model={args.model_size} | device={args.device} | compute={args.compute_type}")
     print(f"Window: {w:.2f}s | Hop: {h:.2f}s")
+    
+    if lyrics_base:
+        print(f"\nLyrics loaded from: {args.lyrics_csv}")
+        print(f"Total lines: {len(lyrics_base)}")
+    
     print("-" * 80)
 
     start_time = time.time()
@@ -176,7 +244,12 @@ def main():
         text = engine.transcribe_window(window_audio)
 
         elapsed_time = time.time() - start_time
-        print(f"[{sec_to_ts(win_start)} -> {sec_to_ts(win_end)}] [{elapsed_time:.3f}s elapsed] {text}")
+        print(f"\n[{sec_to_ts(win_start)} -> {sec_to_ts(win_end)}] [{elapsed_time:.3f}s elapsed]")
+        print(f"ASR Output: {text}")
+        
+        if lyrics_base:
+            print(f"Lyrics (raw): {lyrics_base}")
+            print(f"Lyrics (normalized): {lyrics_normalized}")
 
         if args.sleep_real_time:
             time.sleep(h)
