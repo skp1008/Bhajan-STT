@@ -1,10 +1,10 @@
 import argparse
 import sys
 import time
-import tempfile
+import io
 import os
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy as np
 import soundfile as sf
@@ -79,24 +79,18 @@ class WhisperOnlineEngine:
         self.client = openai.OpenAI(api_key=api_key)
 
     def transcribe_window(self, audio_16k: np.ndarray) -> str:
-        # Write audio to temporary file
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
-            tmp_path = tmp_file.name
-            sf.write(tmp_path, audio_16k, TARGET_SR)
+        # Write audio to memory buffer
+        audio_buffer = io.BytesIO()
+        sf.write(audio_buffer, audio_16k, TARGET_SR, format='WAV')
+        audio_buffer.seek(0)
         
-        try:
-            # Call OpenAI Whisper API
-            with open(tmp_path, 'rb') as audio_file:
-                transcript = self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language=self.cfg.language,
-                )
-            return transcript.text.strip()
-        finally:
-            # Clean up temporary file
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+        # Call OpenAI Whisper API
+        transcript = self.client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_buffer,
+            language=self.cfg.language,
+        )
+        return transcript.text.strip()
 
 
 def build_engine(engine_name: str, cfg: ASRConfig):
@@ -149,6 +143,10 @@ def main():
         language=args.language,
         beam_size=args.beam_size,
     )
+    
+    if args.engine == "whisper-online":
+        print("Warning: --model-size, --device, --compute-type, and --beam-size are ignored for whisper-online engine.", file=sys.stderr)
+    
     engine = build_engine(args.engine, cfg)
 
     w = args.window_sec
