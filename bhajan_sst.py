@@ -84,10 +84,10 @@ class WhisperOnlineEngine:
         sf.write(audio_buffer, audio_16k, TARGET_SR, format='WAV')
         audio_buffer.seek(0)
         
-        # Call OpenAI Whisper API
+        # Call OpenAI Whisper API (need filename for format detection)
         transcript = self.client.audio.transcriptions.create(
             model="whisper-1",
-            file=audio_buffer,
+            file=("audio.wav", audio_buffer, "audio/wav"),
             language=self.cfg.language,
         )
         return transcript.text.strip()
