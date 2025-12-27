@@ -69,6 +69,74 @@ def load_lyrics_from_csv(path: str, col_index: int = 0) -> Tuple[List[str], List
     return lyrics_base, lyrics_normalized
 
 
+def extract_anchor_tokens(normalized_line: str) -> set:
+    """
+    Extract all words from normalized line as anchor tokens.
+    Returns a set of anchor words.
+    """
+    if not normalized_line:
+        return set()
+    tokens = _WS_RE.split(normalized_line.strip())
+    # Filter out empty tokens
+    return {token for token in tokens if token}
+
+
+def score_line_match(asr_tokens: set, line_anchors: set) -> Tuple[float, float]:
+    """
+    Score how well ASR tokens match a line's anchor tokens.
+    Returns: (score, coverage) where:
+    - score = number of matched anchors
+    - coverage = matched_anchors / total_anchors (0.0 to 1.0)
+    """
+    if not line_anchors:
+        return 0.0, 0.0
+    
+    matched = asr_tokens & line_anchors
+    score = float(len(matched))
+    coverage = score / len(line_anchors) if line_anchors else 0.0
+    
+    return score, coverage
+
+
+def decide_line_switch(
+    current_line: int,
+    scores: List[float],
+    coverages: List[float],
+    min_score: float,
+    margin: float
+) -> Tuple[bool, int]:
+    """
+    Decide whether to switch lines based on scoring rules.
+    Returns: (should_switch, new_line_index)
+    Line indices are 1-based (Line 1, Line 2, etc.)
+    """
+    if not scores:
+        return False, current_line
+    
+    # Find best line (1-based index)
+    best_line = max(range(len(scores)), key=lambda i: scores[i]) + 1
+    best_score = scores[best_line - 1]
+    current_score = scores[current_line - 1] if current_line <= len(scores) else 0.0
+    
+    # Switching conditions
+    if best_line == current_line:
+        return False, current_line
+    
+    if best_score < min_score:
+        return False, current_line
+    
+    if best_score < current_score + margin:
+        return False, current_line
+    
+    # Special rule for Line 1: require 50% coverage
+    if best_line == 1:
+        coverage_1 = coverages[0] if coverages else 0.0
+        if coverage_1 < 0.50:
+            return False, current_line
+    
+    return True, best_line
+
+
 def load_audio_mono(path: str) -> Tuple[np.ndarray, int]:
     audio, sr = sf.read(path, always_2d=False)
     if audio.ndim == 2:
@@ -170,8 +238,10 @@ def main():
     p.add_argument("--language", default="hi", help="Language code (hi for Hindi).")
     p.add_argument("--beam-size", type=int, default=1, help="Beam size (1 is fastest).")
 
-    p.add_argument("--window-sec", type=float, default=15.0, help="Context window length in seconds.")
-    p.add_argument("--hop-sec", type=float, default=15.0, help="Hop length in seconds.")
+    p.add_argument("--window-sec", type=float, default=25.0, help="Context window length in seconds.")
+    p.add_argument("--hop-sec", type=float, default=5.0, help="Hop length in seconds.")
+    p.add_argument("--min-score", type=float, default=2.0, help="Minimum score threshold for line switching.")
+    p.add_argument("--margin", type=float, default=1.0, help="Score margin required to switch lines (prevents flapping).")
     p.add_argument("--start-sec", type=float, default=0.0, help="Start time in seconds.")
     p.add_argument("--end-sec", type=float, default=-1.0, help="End time in seconds (-1 = full file).")
     p.add_argument("--sleep-real-time", action="store_true",
@@ -196,8 +266,12 @@ def main():
     # Load lyrics if CSV provided
     lyrics_base: Optional[List[str]] = None
     lyrics_normalized: Optional[List[str]] = None
+    line_anchors: Optional[List[set]] = None
+    
     if args.lyrics_csv:
         lyrics_base, lyrics_normalized = load_lyrics_from_csv(args.lyrics_csv)
+        # Precompute anchor tokens for each line
+        line_anchors = [extract_anchor_tokens(line) for line in lyrics_normalized]
 
     cfg = ASRConfig(
         model_size=args.model_size,
@@ -237,6 +311,11 @@ def main():
             print(f"   {i:02d}. {line}")
     
     print("-" * 80)
+    
+    # Initialize line matching state
+    current_line = 1  # Start at Line 1
+    if not lyrics_base:
+        print("Warning: No lyrics loaded. Line matching disabled.", file=sys.stderr)
 
     start_time = time.time()
     while t <= end_sec + 1e-6:
@@ -251,7 +330,36 @@ def main():
 
         elapsed_time = time.time() - start_time
         print(f"\n[{sec_to_ts(win_start)} -> {sec_to_ts(win_end)}] [{elapsed_time:.3f}s elapsed]")
-        print(f"3. ASR Output: {text}")
+        print(f"ASR Output: {text}")
+        
+        # Line matching logic
+        if lyrics_base and line_anchors:
+            # Normalize ASR text
+            asr_normalized = normalize_lyrics_line(text)
+            asr_tokens = extract_anchor_tokens(asr_normalized)
+            
+            # Score all lines
+            scores = []
+            coverages = []
+            for anchors in line_anchors:
+                score, coverage = score_line_match(asr_tokens, anchors)
+                scores.append(score)
+                coverages.append(coverage)
+            
+            # Decide whether to switch
+            should_switch, new_line = decide_line_switch(
+                current_line,
+                scores,
+                coverages,
+                args.min_score,
+                args.margin
+            )
+            
+            if should_switch:
+                print(f"[Switch to Line {new_line}]")
+                current_line = new_line
+            else:
+                print(f"[Stay Line {current_line}]")
 
         if args.sleep_real_time:
             time.sleep(h)
