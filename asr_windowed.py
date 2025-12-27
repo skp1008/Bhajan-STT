@@ -85,8 +85,8 @@ def main():
     p.add_argument("--language", default="hi", help="Language code (hi for Hindi).")
     p.add_argument("--beam-size", type=int, default=1, help="Beam size (1 is fastest).")
 
-    p.add_argument("--window-sec", type=float, default=8.0, help="Context window length in seconds.")
-    p.add_argument("--hop-sec", type=float, default=1.0, help="Hop length in seconds.")
+    p.add_argument("--window-sec", type=float, default=15.0, help="Context window length in seconds.")
+    p.add_argument("--hop-sec", type=float, default=5.0, help="Hop length in seconds.")
     p.add_argument("--start-sec", type=float, default=0.0, help="Start time in seconds.")
     p.add_argument("--end-sec", type=float, default=-1.0, help="End time in seconds (-1 = full file).")
     p.add_argument("--sleep-real-time", action="store_true",
