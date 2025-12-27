@@ -229,6 +229,12 @@ def main():
     if lyrics_base:
         print(f"\nLyrics loaded from: {args.lyrics_csv}")
         print(f"Total lines: {len(lyrics_base)}")
+        print("\n1. Lyrics (raw - parsed from CSV):")
+        for i, line in enumerate(lyrics_base, 1):
+            print(f"   {i:02d}. {line}")
+        print("\n2. Lyrics (normalized):")
+        for i, line in enumerate(lyrics_normalized, 1):
+            print(f"   {i:02d}. {line}")
     
     print("-" * 80)
 
@@ -245,11 +251,7 @@ def main():
 
         elapsed_time = time.time() - start_time
         print(f"\n[{sec_to_ts(win_start)} -> {sec_to_ts(win_end)}] [{elapsed_time:.3f}s elapsed]")
-        print(f"ASR Output: {text}")
-        
-        if lyrics_base:
-            print(f"Lyrics (raw): {lyrics_base}")
-            print(f"Lyrics (normalized): {lyrics_normalized}")
+        print(f"3. ASR Output: {text}")
 
         if args.sleep_real_time:
             time.sleep(h)
