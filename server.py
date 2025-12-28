@@ -352,24 +352,56 @@ def build_frontend():
     if not frontend_build.exists() and frontend_dir.exists():
         print("Frontend not built. Building...")
         try:
+            original_dir = os.getcwd()
             os.chdir(frontend_dir)
+            
             if not (frontend_dir / "node_modules").exists():
                 print("Installing npm dependencies...")
-                subprocess.run(["npm", "install"], check=True, capture_output=True)
+                result = subprocess.run(["npm", "install"], check=True, capture_output=True, text=True)
+                if result.stdout:
+                    print(result.stdout)
+            
             print("Building frontend...")
-            subprocess.run(["npm", "run", "build"], check=True, capture_output=True)
-            os.chdir(Path(__file__).parent)
+            result = subprocess.run(["npm", "run", "build"], check=True, capture_output=True, text=True)
+            if result.stdout:
+                print(result.stdout)
+            
+            os.chdir(original_dir)
             print("✓ Frontend built successfully!")
+            return True
         except subprocess.CalledProcessError as e:
             print(f"Error building frontend: {e}")
             if e.stderr:
-                print(e.stderr.decode())
+                print(e.stderr)
+            if e.stdout:
+                print(e.stdout)
             print("Please manually run: cd frontend && npm install && npm run build")
-            os.chdir(Path(__file__).parent)
+            try:
+                os.chdir(Path(__file__).parent)
+            except:
+                pass
+            return False
         except FileNotFoundError:
             print("npm not found. Please install Node.js and npm, then run:")
             print("cd frontend && npm install && npm run build")
-            os.chdir(Path(__file__).parent)
+            try:
+                os.chdir(Path(__file__).parent)
+            except:
+                pass
+            return False
+        except Exception as e:
+            print(f"Unexpected error building frontend: {e}")
+            try:
+                os.chdir(Path(__file__).parent)
+            except:
+                pass
+            return False
+    elif frontend_build.exists():
+        print("✓ Frontend already built")
+        return True
+    else:
+        print("⚠ Frontend directory not found")
+        return False
 
 
 if __name__ == "__main__":
@@ -386,7 +418,10 @@ if __name__ == "__main__":
     print()
     
     # Build frontend if needed
-    build_frontend()
+    frontend_ready = build_frontend()
+    if not frontend_ready:
+        print("\n⚠ Frontend build failed. Server will start but frontend may not work.")
+        print("Please manually build the frontend: cd frontend && npm install && npm run build\n")
     print()
     
     # Open browser after 1.5 seconds
