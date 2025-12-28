@@ -31,7 +31,7 @@ frontend_build = Path(__file__).parent / "frontend" / "dist"
 frontend_dir = Path(__file__).parent / "frontend"
 
 if frontend_build.exists():
-    # Serve built React app
+    # Serve built React app static files
     app.mount("/assets", StaticFiles(directory=str(frontend_build / "assets")), name="assets")
     
     @app.get("/", response_class=HTMLResponse)
@@ -41,6 +41,19 @@ if frontend_build.exists():
         if index_path.exists():
             return index_path.read_text()
         return "<html><body><h1>Error: index.html not found</h1></body></html>"
+    
+    @app.get("/{path:path}")
+    async def serve_static(path: str):
+        """Serve other static files"""
+        file_path = frontend_build / path
+        if file_path.exists() and file_path.is_file():
+            from fastapi.responses import FileResponse
+            return FileResponse(str(file_path))
+        # Fallback to index.html for client-side routing
+        index_path = frontend_build / "index.html"
+        if index_path.exists():
+            return HTMLResponse(content=index_path.read_text())
+        return {"error": "File not found"}
 else:
     # Fallback: serve simple HTML that loads from Vite dev server
     @app.get("/", response_class=HTMLResponse)
@@ -48,10 +61,10 @@ else:
         return """
         <html>
         <head><title>AI Bhajan Lyrics Listener</title></head>
-        <body style="font-family: Arial; padding: 40px; text-align: center;">
+        <body style="font-family: Arial; padding: 40px; text-align: center; background: #1e1e2e; color: #e0e0e0;">
         <h1>Frontend not built</h1>
         <p>Please run the following commands:</p>
-        <pre style="background: #f0f0f0; padding: 20px; display: inline-block; border-radius: 5px;">
+        <pre style="background: #2a2a3e; padding: 20px; display: inline-block; border-radius: 5px; color: #b0b0b0;">
 cd frontend
 npm install
 npm run build
