@@ -27,9 +27,21 @@ npm run build
 cd ..
 ```
 
-### 3. Set Environment Variable (Optional - for online Whisper)
+### 3. Set API Key (Optional - for online Whisper)
 
-If you want to use the online Whisper API:
+If you want to use the online Whisper API, create a `.secrets` file in the project root:
+
+```bash
+cp .secrets.example .secrets
+```
+
+Then edit `.secrets` and add your API key:
+
+```
+OPENAI_API_KEY=your_api_key_here
+```
+
+Alternatively, you can set it as an environment variable:
 
 ```bash
 export OPENAI_API_KEY=your_api_key_here
