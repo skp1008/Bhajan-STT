@@ -230,7 +230,9 @@ async def websocket_process(websocket: WebSocket):
             engine_name = "whisper"
             print("Warning: No API key found, using local whisper engine instead of whisper-online")
         
+        print(f"Initializing {engine_name} engine...")
         engine = build_engine(engine_name, cfg)
+        print(f"Engine initialized. Processing audio ({total_sec:.1f}s total)...")
         
         current_line = 1
         
@@ -247,6 +249,7 @@ async def websocket_process(websocket: WebSocket):
         
         window_count = 0
         total_windows = int((end_sec - start_sec - window_sec) / hop_sec) + 1 if total_sec_processed >= window_sec else 1
+        print(f"Will process {total_windows} windows (25s each, 5s hop)")
         
         while t <= end_sec + 1e-6:
             win_start = t - window_sec
@@ -257,7 +260,17 @@ async def websocket_process(websocket: WebSocket):
             window_audio = audio[i0:i1]
             
             # Transcribe
-            asr_text = engine.transcribe_window(window_audio)
+            print(f"Processing window {window_count + 1}/{total_windows} ({win_start:.1f}s - {win_end:.1f}s)...")
+            try:
+                asr_text = engine.transcribe_window(window_audio)
+                print(f"  Transcribed: {asr_text[:50]}...")
+            except Exception as e:
+                print(f"  ERROR during transcription: {e}")
+                await websocket.send_json({
+                    "type": "error",
+                    "message": f"Transcription error: {str(e)}"
+                })
+                return
             
             # Line matching
             asr_normalized = normalize_lyrics_line(asr_text)
@@ -298,12 +311,20 @@ async def websocket_process(websocket: WebSocket):
         await websocket.send_json({"type": "complete"})
         
     except WebSocketDisconnect:
+        print("WebSocket disconnected by client")
         pass
     except Exception as e:
-        await websocket.send_json({
-            "type": "error",
-            "message": str(e)
-        })
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"ERROR in websocket_process: {e}")
+        print(error_trace)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
+        except:
+            pass
     finally:
         # Cleanup uploaded files
         try:
