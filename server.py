@@ -96,50 +96,57 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 frontend_build = Path(__file__).parent / "frontend" / "dist"
 frontend_dir = Path(__file__).parent / "frontend"
 
-if frontend_build.exists():
-    # Serve built React app static files
-    app.mount("/assets", StaticFiles(directory=str(frontend_build / "assets")), name="assets")
-    
-    @app.get("/", response_class=HTMLResponse)
-    async def read_root():
-        """Serve the React app"""
-        index_path = frontend_build / "index.html"
-        if index_path.exists():
-            return index_path.read_text()
-        return "<html><body><h1>Error: index.html not found</h1></body></html>"
-    
-    @app.get("/{path:path}")
-    async def serve_static(path: str):
-        """Serve other static files"""
-        from fastapi.responses import FileResponse
-        file_path = frontend_build / path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(str(file_path))
-        # Fallback to index.html for client-side routing
-        index_path = frontend_build / "index.html"
-        if index_path.exists():
-            return HTMLResponse(content=index_path.read_text())
-        return {"error": "File not found"}
-else:
-    # Fallback: serve simple HTML that loads from Vite dev server
-    @app.get("/", response_class=HTMLResponse)
-    async def read_root():
-        return """
-        <html>
-        <head><title>AI Bhajan Lyrics Listener</title></head>
-        <body style="font-family: Arial; padding: 40px; text-align: center; background: #1e1e2e; color: #e0e0e0;">
-        <h1>Frontend not built</h1>
-        <p>Please run the following commands:</p>
-        <pre style="background: #2a2a3e; padding: 20px; display: inline-block; border-radius: 5px; color: #b0b0b0;">
+# Mount assets directory if it exists (will be created after build)
+assets_dir = frontend_build / "assets"
+if assets_dir.exists():
+    app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    """Serve the React app - dynamically check if built"""
+    index_path = frontend_build / "index.html"
+    if index_path.exists():
+        return index_path.read_text()
+    # Frontend not built yet
+    return """
+    <html>
+    <head><title>AI Bhajan Lyrics Listener</title></head>
+    <body style="font-family: Arial; padding: 40px; text-align: center; background: #1e1e2e; color: #e0e0e0;">
+    <h1>Frontend not built</h1>
+    <p>Building frontend... Please wait a moment and refresh.</p>
+    <p>If this persists, please run the following commands:</p>
+    <pre style="background: #2a2a3e; padding: 20px; display: inline-block; border-radius: 5px; color: #b0b0b0;">
 cd frontend
 npm install
 npm run build
 cd ..
 python server.py
-        </pre>
-        </body>
-        </html>
-        """
+    </pre>
+    </body>
+    </html>
+    """
+
+@app.get("/{path:path}")
+async def serve_static(path: str):
+    """Serve other static files"""
+    from fastapi.responses import FileResponse
+    file_path = frontend_build / path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(str(file_path))
+    # Fallback to index.html for client-side routing
+    index_path = frontend_build / "index.html"
+    if index_path.exists():
+        return HTMLResponse(content=index_path.read_text())
+    # If frontend not built, return the same message as root
+    return HTMLResponse(content="""
+    <html>
+    <head><title>AI Bhajan Lyrics Listener</title></head>
+    <body style="font-family: Arial; padding: 40px; text-align: center; background: #1e1e2e; color: #e0e0e0;">
+    <h1>Frontend not built</h1>
+    <p>Building frontend... Please wait a moment and refresh.</p>
+    </body>
+    </html>
+    """)
 
 
 @app.post("/api/upload")
@@ -417,15 +424,19 @@ if __name__ == "__main__":
     load_secrets()
     print()
     
-    # Build frontend if needed
+    # Build frontend if needed (MUST happen before server starts)
     frontend_ready = build_frontend()
     if not frontend_ready:
         print("\n⚠ Frontend build failed. Server will start but frontend may not work.")
         print("Please manually build the frontend: cd frontend && npm install && npm run build\n")
+    else:
+        # Remount assets if they were just created
+        if assets_dir.exists() and not any(r.path == "/assets" for r in app.routes):
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
     print()
     
-    # Open browser after 1.5 seconds
-    Timer(1.5, open_browser).start()
+    # Open browser after 2 seconds (give build time if it just finished)
+    Timer(2.0, open_browser).start()
     
     print("="*50)
     print("Starting server at http://localhost:8000")
