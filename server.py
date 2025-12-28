@@ -5,12 +5,53 @@ import tempfile
 import shutil
 import subprocess
 from pathlib import Path
+from threading import Timer
+
+# Check and install dependencies BEFORE importing them
+def install_dependencies():
+    """Install Python dependencies from requirements.txt"""
+    requirements_path = Path(__file__).parent / "requirements.txt"
+    if not requirements_path.exists():
+        print("Warning: requirements.txt not found")
+        return False
+    
+    try:
+        # Try to import critical packages
+        import fastapi
+        import uvicorn
+        return True
+    except ImportError:
+        print("Installing Python dependencies...")
+        try:
+            # Read requirements
+            with open(requirements_path, "r") as f:
+                required_packages = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+            
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install"] + required_packages,
+                check=True
+            )
+            print("✓ Dependencies installed successfully")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Error installing dependencies: {e}")
+            print("Please manually run: pip install -r requirements.txt")
+            return False
+        except Exception as e:
+            print(f"Error checking dependencies: {e}")
+            return False
+
+# Install dependencies first
+if not install_dependencies():
+    print("Failed to install dependencies. Exiting.")
+    sys.exit(1)
+
+# Now import the packages (they should be installed)
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 import uvicorn
 import webbrowser
-from threading import Timer
 
 # Import from bhajan_sst.py
 sys.path.insert(0, str(Path(__file__).parent))
@@ -276,47 +317,34 @@ def open_browser():
     webbrowser.open('http://localhost:8000')
 
 
-def install_dependencies():
-    """Install Python dependencies from requirements.txt"""
+def check_and_install_remaining_dependencies():
+    """Check for any remaining missing dependencies and install them"""
     requirements_path = Path(__file__).parent / "requirements.txt"
     if not requirements_path.exists():
-        print("Warning: requirements.txt not found")
         return
     
-    print("Checking Python dependencies...")
     try:
-        # Try to import each dependency to see if it's installed
-        required_packages = []
+        # Try to import all required packages
         with open(requirements_path, "r") as f:
+            required_packages = []
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
-                    # Extract package name (before any version specifiers)
                     pkg_name = line.split(">=")[0].split("==")[0].split("[")[0].strip()
-                    required_packages.append((pkg_name, line))
+                    try:
+                        __import__(pkg_name.replace("-", "_"))
+                    except ImportError:
+                        required_packages.append(line)
         
-        # Check which packages are missing
-        missing_packages = []
-        for pkg_name, full_line in required_packages:
-            try:
-                __import__(pkg_name.replace("-", "_"))
-            except ImportError:
-                missing_packages.append(full_line)
-        
-        if missing_packages:
-            print(f"Installing {len(missing_packages)} missing packages...")
+        if required_packages:
+            print(f"Installing {len(required_packages)} additional packages...")
             subprocess.run(
-                [sys.executable, "-m", "pip", "install"] + missing_packages,
+                [sys.executable, "-m", "pip", "install"] + required_packages,
                 check=True
             )
-            print("✓ Dependencies installed successfully")
-        else:
-            print("✓ All dependencies already installed")
-    except subprocess.CalledProcessError as e:
-        print(f"Error installing dependencies: {e}")
-        print("Please manually run: pip install -r requirements.txt")
+            print("✓ Additional dependencies installed")
     except Exception as e:
-        print(f"Error checking dependencies: {e}")
+        print(f"Note: Some dependencies may be missing: {e}")
 
 
 def build_frontend():
@@ -349,8 +377,8 @@ if __name__ == "__main__":
     print("AI Bhajan Lyrics Listener - Server Setup")
     print("="*50 + "\n")
     
-    # Install Python dependencies
-    install_dependencies()
+    # Check for any remaining dependencies (dependencies already checked at import time)
+    check_and_install_remaining_dependencies()
     print()
     
     # Load secrets
