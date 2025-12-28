@@ -28,17 +28,39 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 # Serve frontend static files
 frontend_build = Path(__file__).parent / "frontend" / "dist"
+frontend_dir = Path(__file__).parent / "frontend"
+
 if frontend_build.exists():
-    app.mount("/static", StaticFiles(directory=str(frontend_build)), name="static")
-
-
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
-    """Serve the React app"""
-    index_path = frontend_build / "index.html"
-    if index_path.exists():
-        return index_path.read_text()
-    return "<html><body><h1>Frontend not built. Run 'npm run build' in frontend directory.</h1></body></html>"
+    # Serve built React app
+    app.mount("/assets", StaticFiles(directory=str(frontend_build / "assets")), name="assets")
+    
+    @app.get("/", response_class=HTMLResponse)
+    async def read_root():
+        """Serve the React app"""
+        index_path = frontend_build / "index.html"
+        if index_path.exists():
+            return index_path.read_text()
+        return "<html><body><h1>Error: index.html not found</h1></body></html>"
+else:
+    # Fallback: serve simple HTML that loads from Vite dev server
+    @app.get("/", response_class=HTMLResponse)
+    async def read_root():
+        return """
+        <html>
+        <head><title>AI Bhajan Lyrics Listener</title></head>
+        <body style="font-family: Arial; padding: 40px; text-align: center;">
+        <h1>Frontend not built</h1>
+        <p>Please run the following commands:</p>
+        <pre style="background: #f0f0f0; padding: 20px; display: inline-block; border-radius: 5px;">
+cd frontend
+npm install
+npm run build
+cd ..
+python server.py
+        </pre>
+        </body>
+        </html>
+        """
 
 
 @app.post("/api/upload")
@@ -203,17 +225,33 @@ def open_browser():
 
 if __name__ == "__main__":
     # Build frontend if needed
-    frontend_dir = Path(__file__).parent / "frontend"
     if not frontend_build.exists() and frontend_dir.exists():
         print("Frontend not built. Building...")
         import subprocess
-        os.chdir(frontend_dir)
-        subprocess.run(["npm", "install"], check=True)
-        subprocess.run(["npm", "run", "build"], check=True)
+        try:
+            os.chdir(frontend_dir)
+            if not (frontend_dir / "node_modules").exists():
+                print("Installing npm dependencies...")
+                subprocess.run(["npm", "install"], check=True)
+            print("Building frontend...")
+            subprocess.run(["npm", "run", "build"], check=True)
+            os.chdir(Path(__file__).parent)
+            print("Frontend built successfully!")
+        except subprocess.CalledProcessError as e:
+            print(f"Error building frontend: {e}")
+            print("Please manually run: cd frontend && npm install && npm run build")
+            os.chdir(Path(__file__).parent)
+        except FileNotFoundError:
+            print("npm not found. Please install Node.js and npm, then run:")
+            print("cd frontend && npm install && npm run build")
+            os.chdir(Path(__file__).parent)
     
     # Open browser after 1.5 seconds
     Timer(1.5, open_browser).start()
     
+    print("\n" + "="*50)
     print("Starting server at http://localhost:8000")
+    print("Browser will open automatically...")
+    print("="*50 + "\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
