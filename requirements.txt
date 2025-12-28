@@ -3,3 +3,7 @@ soundfile
 scipy
 faster-whisper
 openai
+fastapi
+uvicorn[standard]
+websockets
+python-multipart

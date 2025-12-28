@@ -42,3 +42,10 @@ Thumbs.db
 *.flac
 test_audio.*
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Uploads
+*.tmp
