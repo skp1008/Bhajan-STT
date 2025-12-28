@@ -45,8 +45,7 @@ def load_secrets():
     else:
         print("ℹ No API key found (will use local whisper engine)")
 
-# Load secrets on import
-load_secrets()
+# Note: load_secrets() will be called in main()
 
 # Store uploaded files temporarily
 UPLOAD_DIR = Path(tempfile.gettempdir()) / "bhajan_stt_uploads"
