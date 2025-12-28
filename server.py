@@ -45,9 +45,9 @@ if frontend_build.exists():
     @app.get("/{path:path}")
     async def serve_static(path: str):
         """Serve other static files"""
+        from fastapi.responses import FileResponse
         file_path = frontend_build / path
         if file_path.exists() and file_path.is_file():
-            from fastapi.responses import FileResponse
             return FileResponse(str(file_path))
         # Fallback to index.html for client-side routing
         index_path = frontend_build / "index.html"
