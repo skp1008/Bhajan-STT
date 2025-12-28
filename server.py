@@ -164,8 +164,11 @@ async def websocket_process(websocket: WebSocket):
         hop_sec = 5.0
         min_score = 2.0
         margin = 1.0
+        start_sec = 0.0
+        end_sec = -1.0
         
-        # Initialize engine (use whisper-online by default, can be made configurable)
+        # Initialize engine with defaults
+        engine_name = "whisper-online"
         cfg = ASRConfig(
             model_size="medium",
             device="cpu",
@@ -174,18 +177,30 @@ async def websocket_process(websocket: WebSocket):
             beam_size=1
         )
         
-        # Check for API key to decide engine
-        engine_name = "whisper-online" if os.getenv("OPENAI_API_KEY") else "whisper"
+        # Fallback to local whisper if no API key
+        if not os.getenv("OPENAI_API_KEY"):
+            engine_name = "whisper"
+            print("Warning: No API key found, using local whisper engine instead of whisper-online")
+        
         engine = build_engine(engine_name, cfg)
         
         current_line = 1
         
-        # Process windows
-        t = window_sec
-        window_count = 0
-        total_windows = int((total_sec - window_sec) / hop_sec) + 1
+        # Apply start_sec and end_sec
+        start_sec = max(0.0, start_sec)
+        end_sec = total_sec if end_sec < 0 else min(total_sec, end_sec)
+        total_sec_processed = end_sec - start_sec
         
-        while t <= total_sec + 1e-6:
+        # Process windows
+        t = start_sec + window_sec
+        if t > end_sec:
+            await websocket.send_json({"type": "error", "message": "Audio segment is shorter than window-sec."})
+            return
+        
+        window_count = 0
+        total_windows = int((end_sec - start_sec - window_sec) / hop_sec) + 1 if total_sec_processed >= window_sec else 1
+        
+        while t <= end_sec + 1e-6:
             win_start = t - window_sec
             win_end = t
             
