@@ -354,50 +354,85 @@ def check_and_install_remaining_dependencies():
         print(f"Note: Some dependencies may be missing: {e}")
 
 
+def find_npm():
+    """Try to find npm executable"""
+    # Try common locations
+    possible_paths = [
+        "npm",  # In PATH
+        "/usr/local/bin/npm",
+        "/opt/homebrew/bin/npm",
+        shutil.which("npm"),  # Use shutil.which
+    ]
+    for npm_path in possible_paths:
+        if npm_path and (Path(npm_path).exists() or shutil.which(npm_path)):
+            return npm_path
+    return None
+
 def build_frontend():
     """Build frontend if needed"""
     if not frontend_build.exists() and frontend_dir.exists():
         print("Frontend not built. Building...")
+        
+        # Find npm
+        npm_path = find_npm()
+        if not npm_path:
+            print("❌ npm not found!")
+            print("Please install Node.js from https://nodejs.org/")
+            print("After installing, run: cd frontend && npm install && npm run build")
+            return False
+        
         try:
             original_dir = os.getcwd()
             os.chdir(frontend_dir)
             
             if not (frontend_dir / "node_modules").exists():
                 print("Installing npm dependencies...")
-                result = subprocess.run(["npm", "install"], check=True, capture_output=True, text=True)
+                result = subprocess.run([npm_path, "install"], check=True, capture_output=True, text=True)
                 if result.stdout:
-                    print(result.stdout)
+                    # Only show important output
+                    lines = result.stdout.split('\n')
+                    for line in lines[-10:]:  # Last 10 lines
+                        if line.strip():
+                            print(line)
             
             print("Building frontend...")
-            result = subprocess.run(["npm", "run", "build"], check=True, capture_output=True, text=True)
+            result = subprocess.run([npm_path, "run", "build"], check=True, capture_output=True, text=True)
             if result.stdout:
-                print(result.stdout)
+                # Only show important output
+                lines = result.stdout.split('\n')
+                for line in lines:
+                    if 'built in' in line.lower() or 'dist' in line.lower() or 'error' in line.lower():
+                        print(line)
+                    elif len(lines) < 20:  # If output is short, show all
+                        print(line)
             
             os.chdir(original_dir)
-            print("✓ Frontend built successfully!")
-            return True
+            
+            # Verify build succeeded
+            if frontend_build.exists() and (frontend_build / "index.html").exists():
+                print("✓ Frontend built successfully!")
+                return True
+            else:
+                print("⚠ Build completed but index.html not found")
+                return False
         except subprocess.CalledProcessError as e:
-            print(f"Error building frontend: {e}")
+            print(f"❌ Error building frontend:")
             if e.stderr:
                 print(e.stderr)
             if e.stdout:
-                print(e.stdout)
-            print("Please manually run: cd frontend && npm install && npm run build")
-            try:
-                os.chdir(Path(__file__).parent)
-            except:
-                pass
-            return False
-        except FileNotFoundError:
-            print("npm not found. Please install Node.js and npm, then run:")
-            print("cd frontend && npm install && npm run build")
+                # Show last few lines of output
+                lines = e.stdout.split('\n')
+                for line in lines[-5:]:
+                    if line.strip():
+                        print(line)
+            print("\nPlease manually run: cd frontend && npm install && npm run build")
             try:
                 os.chdir(Path(__file__).parent)
             except:
                 pass
             return False
         except Exception as e:
-            print(f"Unexpected error building frontend: {e}")
+            print(f"❌ Unexpected error building frontend: {e}")
             try:
                 os.chdir(Path(__file__).parent)
             except:
