@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import shutil
+import subprocess
 from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +22,31 @@ from bhajan_sst import (
 )
 
 app = FastAPI()
+
+# Load secrets file if it exists
+def load_secrets():
+    """Load API key from .secrets file"""
+    secrets_path = Path(__file__).parent / ".secrets"
+    if secrets_path.exists():
+        with open(secrets_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if key == "OPENAI_API_KEY" and value:
+                        os.environ["OPENAI_API_KEY"] = value
+                        print(f"✓ Loaded API key from .secrets file")
+                        return
+    # If no .secrets file or no API key, check environment variable
+    if os.getenv("OPENAI_API_KEY"):
+        print(f"✓ Using API key from environment variable")
+    else:
+        print("ℹ No API key found (will use local whisper engine)")
+
+# Load secrets on import
+load_secrets()
 
 # Store uploaded files temporarily
 UPLOAD_DIR = Path(tempfile.gettempdir()) / "bhajan_stt_uploads"
@@ -236,33 +262,95 @@ def open_browser():
     webbrowser.open('http://localhost:8000')
 
 
-if __name__ == "__main__":
-    # Build frontend if needed
+def install_dependencies():
+    """Install Python dependencies from requirements.txt"""
+    requirements_path = Path(__file__).parent / "requirements.txt"
+    if not requirements_path.exists():
+        print("Warning: requirements.txt not found")
+        return
+    
+    print("Checking Python dependencies...")
+    try:
+        # Try to import each dependency to see if it's installed
+        required_packages = []
+        with open(requirements_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    # Extract package name (before any version specifiers)
+                    pkg_name = line.split(">=")[0].split("==")[0].split("[")[0].strip()
+                    required_packages.append((pkg_name, line))
+        
+        # Check which packages are missing
+        missing_packages = []
+        for pkg_name, full_line in required_packages:
+            try:
+                __import__(pkg_name.replace("-", "_"))
+            except ImportError:
+                missing_packages.append(full_line)
+        
+        if missing_packages:
+            print(f"Installing {len(missing_packages)} missing packages...")
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install"] + missing_packages,
+                check=True
+            )
+            print("✓ Dependencies installed successfully")
+        else:
+            print("✓ All dependencies already installed")
+    except subprocess.CalledProcessError as e:
+        print(f"Error installing dependencies: {e}")
+        print("Please manually run: pip install -r requirements.txt")
+    except Exception as e:
+        print(f"Error checking dependencies: {e}")
+
+
+def build_frontend():
+    """Build frontend if needed"""
     if not frontend_build.exists() and frontend_dir.exists():
         print("Frontend not built. Building...")
-        import subprocess
         try:
             os.chdir(frontend_dir)
             if not (frontend_dir / "node_modules").exists():
                 print("Installing npm dependencies...")
-                subprocess.run(["npm", "install"], check=True)
+                subprocess.run(["npm", "install"], check=True, capture_output=True)
             print("Building frontend...")
-            subprocess.run(["npm", "run", "build"], check=True)
+            subprocess.run(["npm", "run", "build"], check=True, capture_output=True)
             os.chdir(Path(__file__).parent)
-            print("Frontend built successfully!")
+            print("✓ Frontend built successfully!")
         except subprocess.CalledProcessError as e:
             print(f"Error building frontend: {e}")
+            if e.stderr:
+                print(e.stderr.decode())
             print("Please manually run: cd frontend && npm install && npm run build")
             os.chdir(Path(__file__).parent)
         except FileNotFoundError:
             print("npm not found. Please install Node.js and npm, then run:")
             print("cd frontend && npm install && npm run build")
             os.chdir(Path(__file__).parent)
+
+
+if __name__ == "__main__":
+    print("="*50)
+    print("AI Bhajan Lyrics Listener - Server Setup")
+    print("="*50 + "\n")
+    
+    # Install Python dependencies
+    install_dependencies()
+    print()
+    
+    # Load secrets
+    load_secrets()
+    print()
+    
+    # Build frontend if needed
+    build_frontend()
+    print()
     
     # Open browser after 1.5 seconds
     Timer(1.5, open_browser).start()
     
-    print("\n" + "="*50)
+    print("="*50)
     print("Starting server at http://localhost:8000")
     print("Browser will open automatically...")
     print("="*50 + "\n")

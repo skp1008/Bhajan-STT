@@ -49,3 +49,6 @@ frontend/.vite/
 
 # Uploads
 *.tmp
+
+# Secrets
+.secrets
